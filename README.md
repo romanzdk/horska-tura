@@ -1,6 +1,6 @@
 # Horská túra – Krkonoše
 
-Jednoduchá 3D hra v prohlížeči. Procházíš se jako turista v Krkonoších a v pohledu třetí osoby se snažíš dojít až na vrchol Sněžky.
+Jednoduchá 3D hra v prohlížeči. Procházíš se jako turista v Krkonoších a v pohledu třetí osoby jdeš od Luční boudy po značené stezce. Na úvodní obrazovce si vybereš trasu: na Sněžku (1603 m n. m.), nebo klidnější výšlap na Luční horu.
 
 ## Hrát
 
