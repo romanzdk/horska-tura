@@ -13,7 +13,7 @@ Jednoduchá 3D hra v prohlížeči. Procházíš se jako turista v Krkonoších 
 - Mezerník = skok
 - myš (táhnout) = kamera
 - kolečko = přiblížení
-- na mobilu joystick vlevo + tlačítko skoku + tažení prstem pro kameru
+- na mobilu joystick vlevo + tlačítko skoku + tažení prstem pro kameru + dva prsty = přiblížení
 
 ## Technologie
 
