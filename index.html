@@ -106,14 +106,16 @@
   #start .keys { margin-top: 22px; font-size: 13px; color: var(--muted); max-width: 520px; line-height: 1.5; }
   .routes { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
   .routes button { padding: 12px 22px; }
+  .routes button:disabled { opacity: .6; cursor: progress; }
+  #lucniAlt { display: inline-block; min-width: 4ch; font-variant-numeric: tabular-nums; }
   .routes small { text-transform: none; letter-spacing: 0; font-size: 12px; margin-top: 2px; color: rgba(255,255,255,.9); }
   #win { background: rgba(10,25,20,.35); pointer-events: auto; }
-  #win .card {
+  .card {
     background: rgba(18,32,28,.82); border: 1px solid rgba(255,255,255,.2); border-radius: 22px;
     padding: 28px 34px; max-width: 420px; box-shadow: 0 20px 60px rgba(0,0,0,.4);
   }
-  #win h2 { margin: 0 0 6px; font-size: 30px; color: var(--accent-2); }
-  #win p { margin: 4px 0 18px; color: #dfe9e1; }
+  .card h2 { margin: 0 0 6px; font-size: 30px; color: var(--accent-2); }
+  .card p { margin: 4px 0 18px; color: #dfe9e1; }
   #win .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   #win button { padding: 9px 20px; font-size: 16px; }
 
@@ -155,8 +157,8 @@
     <h1>Horská túra – Krkonoše</h1>
     <p>Vyber si trasu od Luční boudy: nejvyšší hora Česka, nebo klidnější výšlap na Luční horu.</p>
     <div class="routes">
-      <button class="primary" id="goSnezka">Sněžka · 1603 m<small>nejvyšší hora Česka</small></button>
-      <button class="primary" id="goLucni">Luční hora · <span id="lucniAlt"></span> m<small>klidnější výšlap</small></button>
+      <button class="primary" id="goSnezka" disabled>Sněžka · 1603 m<small>nejvyšší hora Česka</small></button>
+      <button class="primary" id="goLucni" disabled>Luční hora · <span id="lucniAlt"></span> m<small>klidnější výšlap</small></button>
     </div>
     <div class="keys" id="startKeys"></div>
   </div>
@@ -174,6 +176,24 @@
   </div>
 </div>
 
+<div class="overlay" id="fail" hidden>
+  <div class="card"><h2>Hru se nepodařilo spustit</h2><p id="failText"></p></div>
+</div>
+<noscript>
+  <div class="overlay" style="z-index:20"><div class="card"><h2>Hra potřebuje JavaScript</h2><p>Zapni v prohlížeči JavaScript a obnov stránku.</p></div></div>
+</noscript>
+
+<script>
+function startFailed(e) {
+  if (!(e instanceof ErrorEvent) && e.target.tagName !== 'SCRIPT') return;
+  document.getElementById('failText').textContent = /WebGL/.test(e.message)
+    ? 'Prohlížeč nebo zařízení neumí 3D grafiku (WebGL). Zkus jiný prohlížeč nebo zapni hardwarovou akceleraci.'
+    : 'Nepodařilo se načíst hru. Zkontroluj připojení a obnov stránku.';
+  document.getElementById('start').hidden = true;
+  document.getElementById('fail').hidden = false;
+}
+addEventListener('error', startFailed, true);
+</script>
 <script type="module">
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -188,6 +208,15 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const $ = (id) => document.getElementById(id);
+
+// Startup terrain work is split into short slices so the main thread never blocks long
+// (TBT); 8 ms stays under the 50 ms long-task limit even on a much slower phone.
+let sliceEnd = 0;
+const busy = () => performance.now() > sliceEnd;
+async function pause() {
+  await new Promise((r) => setTimeout(r));
+  sliceEnd = performance.now() + 8;
+}
 
 function mulberry(seed) {
   return () => {
@@ -242,6 +271,7 @@ function baseRaw(x, z) {
 
 const SUMMIT = { x: 0, z: 0, raw: -1 };
 for (let x = -HALF; x <= HALF; x += 4) for (let z = -HALF; z <= HALF; z += 4) {
+  if (busy()) await pause();
   const h = baseRaw(x, z);
   if (h > SUMMIT.raw) { SUMMIT.raw = h; SUMMIT.x = x; SUMMIT.z = z; }
 }
@@ -306,7 +336,10 @@ function rawHeight(x, z) {
 }
 
 let RAW_MIN = Infinity;
-for (let x = -HALF; x <= HALF; x += 8) for (let z = -HALF; z <= HALF; z += 8) RAW_MIN = Math.min(RAW_MIN, rawHeight(x, z));
+for (let x = -HALF; x <= HALF; x += 8) for (let z = -HALF; z <= HALF; z += 8) {
+  if (busy()) await pause();
+  RAW_MIN = Math.min(RAW_MIN, rawHeight(x, z));
+}
 
 const height = (x, z) => (rawHeight(x, z) - RAW_MIN) / (SUMMIT.raw - RAW_MIN) * RANGE_Y;
 const altitudeAt = (y) => Math.min(ALT_MAX, ALT_MIN + y / VS);
@@ -369,7 +402,10 @@ const terrainGeo = new THREE.PlaneGeometry(WORLD, WORLD, SEG, SEG);
 terrainGeo.rotateX(-Math.PI / 2);
 {
   const pos = terrainGeo.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, height(pos.getX(i), pos.getZ(i)));
+  for (let i = 0; i < pos.count; i++) {
+    if (busy()) await pause();
+    pos.setY(i, height(pos.getX(i), pos.getZ(i)));
+  }
   terrainGeo.computeVertexNormals();
 }
 
@@ -382,6 +418,7 @@ const forestAt = (x, z, y) => smooth(0.55, 0.38, y / RANGE_Y) * smooth(0.38, 0.6
   const rock = new THREE.Color(0x8a857d), peakRock = new THREE.Color(0xb3aea4), path = new THREE.Color(0xc8b48a);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
+    if (busy()) await pause();
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), t = y / RANGE_Y;
     c.copy(meadow).lerp(floor, forestAt(x, z, y) * 0.85);
     c.lerp(alpine, smooth(0.35, 0.6, t));
@@ -409,9 +446,10 @@ const hutPos = { x: START.x + 15, z: START.z + 15 };
 const nearBuildings = (x, z) => Math.hypot(x - hutPos.x, z - hutPos.z) < 14 || Math.hypot(x - START.x, z - START.z) < 8
   || Math.hypot(x - SUMMIT.x, z - SUMMIT.z) < 16 || Math.hypot(x - LUCNI.x, z - LUCNI.z) < 8;
 
-function scatter(mesh, count, accept) {
+async function scatter(mesh, count, accept) {
   let n = 0;
   for (let tries = 0; tries < count * 40 && n < count; tries++) {
+    if (busy()) await pause();
     const x = (rand() - 0.5) * WORLD * 0.96, z = (rand() - 0.5) * WORLD * 0.96, y = height(x, z);
     if (nearBuildings(x, z)) continue;
     const r = accept(x, z, y, y / RANGE_Y);
@@ -451,7 +489,7 @@ const treeGeo = mergeGeometries([
 ]);
 const trees = new THREE.InstancedMesh(treeGeo, new THREE.MeshLambertMaterial({ vertexColors: true }), 4000);
 trees.castShadow = true;
-scatter(trees, 4000, (x, z, y, t) => {
+await scatter(trees, 4000, (x, z, y, t) => {
   if (rand() > Math.pow(forestAt(x, z, y), 0.7) || slopeAt(x, z, y) > 0.7 || nearTrail(x, z).d < 6) return null;
   const s = 1 + rand() * 0.9;
   return { lift: -0.3, sx: s, sy: s * (0.9 + rand() * 0.3), sz: s, color: tinted(1, 0.3) };
@@ -459,7 +497,7 @@ scatter(trees, 4000, (x, z, y, t) => {
 
 const bushes = new THREE.InstancedMesh(
   new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ flatShading: true }), 1800);
-scatter(bushes, 1800, (x, z, y, t) => {
+await scatter(bushes, 1800, (x, z, y, t) => {
   const p = smooth(0.35, 0.5, t) * smooth(0.85, 0.7, t) * smooth(0.4, 0.6, fbm(x * 0.01 + 90, z * 0.01 + 90, 3));
   if (rand() > p || slopeAt(x, z, y) > 0.9 || nearTrail(x, z).d < 4) return null;
   const s = 1 + rand() * 1.6;
@@ -469,7 +507,7 @@ scatter(bushes, 1800, (x, z, y, t) => {
 const rocks = new THREE.InstancedMesh(
   new THREE.DodecahedronGeometry(1, 0), new THREE.MeshLambertMaterial({ flatShading: true }), 800);
 rocks.castShadow = true;
-scatter(rocks, 800, (x, z, y, t) => {
+await scatter(rocks, 800, (x, z, y, t) => {
   const steep = slopeAt(x, z, y);
   if (rand() > smooth(0.45, 0.85, t) * 0.5 + smooth(0.4, 0.9, steep) * 0.6 || nearTrail(x, z).d < 3) return null;
   const s = 0.5 + rand() * rand() * 2.6;
@@ -880,6 +918,8 @@ function frame() {
   requestAnimationFrame(frame);
 }
 frame();
+$('goSnezka').disabled = $('goLucni').disabled = false;
+removeEventListener('error', startFailed, true);
 </script>
 </body>
 </html>
