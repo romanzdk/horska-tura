@@ -17,7 +17,7 @@ Jednoduchá 3D hra v prohlížeči. Procházíš se jako turista v Krkonoších 
 
 ## Technologie
 
-Čisté HTML + Three.js z CDN. Bez buildu, hostováno na GitHub Pages.
+Čisté HTML + Three.js 0.170.0 (ve `vendor/three/`, licence MIT). Bez buildu, hostováno na GitHub Pages.
 
 ## Spuštění lokálně
 
